@@ -61,25 +61,29 @@ void loop() {
 
   // Gather data
   int WaterLevelReading = adc_read(15); // analog pin 15
-  int temperatureReading = 0;
-  int humidityReading = 0;
-  int dht11Result = dht11.readTemperatureHumidity(temperatureReading, humidityReading); // writes readings to temperatureReading and humidityReading and stores return status in dht11Result
+  int TemperatureReading = 0;
+  int HumidityReading = 0;
+  int dht11Result = dht11.readTemperatureHumidity(TemperatureReading, HumidityReading); // writes readings to TemperatureReading and HumidityReading and stores return status in dht11Result
 
+  // Output water level to serial monitor for debugging
+  U0printInt(WaterLevelReading);
+  U0putchar('\n');
 
-  // Output data
-  if (WaterLevelReading < 250) {
+  // Output data to LCD
+  if (WaterLevelReading < 15) {
     lcd.setCursor(0, 0);
-    lcd.print("Water is too low\n");
+    lcd.print("Water is too low");
+    lcd.setCursor(0, 1);
+    lcd.print("                ");
     state = 'e'; // error
-
-    U0print("1\n");
   }
   else if (dht11Result == 0) {
+    lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("Temp: "); lcd.print(temperatureReading);
+    lcd.print("Temp: "); lcd.print(TemperatureReading);
 
     lcd.setCursor(0, 1);
-    lcd.print("Humidity: "); lcd.print(humidityReading);
+    lcd.print("Humidity: "); lcd.print(HumidityReading);
 
     // if temp good set to idle 'i' and set fan to off
     // if temp no good set to running 'r' and set fan to on
@@ -87,9 +91,6 @@ void loop() {
   else {
     lcd.print(DHT11::getErrorString(dht11Result));
     state = 'e'; // error
-
-
-    U0print("3\n");
   }
 
 
@@ -97,6 +98,11 @@ void loop() {
 }
 
 
+void U0printInt(int num) {
+  char buffer[10];
+  sprintf(buffer, "%d", num);
+  U0print(buffer);
+}
 
 void U0print(char *str) {
   while (*str != '\0') {   // loop until end of string
@@ -132,8 +138,12 @@ unsigned int adc_read(unsigned char adc_channel) {
   // clear the channel selection bits (MUX 5) hint: it's not in the ADMUX register
   *my_ADCSRB &= 0b11110111;
  
-  // set the channel selection bits for channel 0
-  *my_ADMUX |= 0b00000000;
+  // set the channel number
+  if (adc_channel > 7) {
+    *my_ADCSRB |= 0b00001000;  // Set MUX5 for channels 8-15
+    adc_channel -= 8;
+  }
+  *my_ADMUX |= (adc_channel & 0b00000111);  // Set MUX4:0
 
   // set bit 6 of ADCSRA to 1 to start a conversion
   *my_ADCSRA |= 0b01000000;
