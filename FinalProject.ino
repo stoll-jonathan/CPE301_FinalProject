@@ -1,0 +1,157 @@
+// Jonathan Stoll
+// CPE 301 Final Project
+
+/*
+  Pin Setups
+  ----------
+  LCD: digital 12, 11, 5, 4, 3, 2
+  DHT11: digital 1
+  Water Sensor: analog 0
+  RTC: 
+*/
+
+#include <LiquidCrystal.h>
+#include <DHT11.h>
+#include <I2C_RTC.h>
+
+// LCD pins <--> Arduino pins
+const int RS = 12, EN = 11, D4 = 5, D5 = 4, D6 = 3, D7 = 2;
+LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
+
+// DHT11 temp & humidity sensor
+DHT11 dht11(1); // digital pin 1
+
+// Real Time Clock
+static DS1307 RTC;
+
+// UART
+volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
+volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
+volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
+volatile unsigned int  *myUBRR0  = (unsigned int *) 0x00C4;
+volatile unsigned char *myUDR0   = (unsigned char *)0x00C6;
+
+// Water Sensor and ADC
+#define RDA 0x80
+#define TBE 0x20  
+volatile unsigned char* my_ADMUX = (unsigned char*) 0x7C;
+volatile unsigned char* my_ADCSRB = (unsigned char*) 0x7B;
+volatile unsigned char* my_ADCSRA = (unsigned char*) 0x7A;
+volatile unsigned int*  my_ADC_DATA = (unsigned int*) 0x78;
+
+
+void setup() {
+  // setup the UART
+  U0init(9600);
+
+  // setup the ADC
+  adc_init();
+
+  // setup the LCD
+  lcd.begin(16, 2); // cols, rows
+  lcd.clear();
+}
+
+void loop() {
+  // Gather data
+  int WaterLevelReading = adc_read(0); // analog pin 0
+  int temperatureReading = 0;
+  int humidityReading = 0;
+  int dht11Result = dht11.readTemperatureHumidity(temperatureReading, humidityReading); // writes readings to temperatureReading and humidityReading and stores return status in dht11Result
+
+
+  // Output data
+  if (WaterLevelReading < 25) {
+    lcd.setCursor(0, 0);
+    lcd.print("Water is too low\n");
+  }
+
+  if (dht11Result == 0) {
+    lcd.setCursor(0, 0);
+    lcd.print("Temp: "); lcd.print(temperatureReading);
+
+    lcd.setCursor(1, 0);
+    lcd.print("Humidity: "); lcd.print(humidityReading);
+  }
+  else {
+    lcd.print(DHT11::getErrorString(dht11Result))
+  }
+
+
+  
+}
+
+
+
+void U0print(char *str) {
+  while (*str != '\0') {   // loop until end of string
+    U0putchar(*str);       // send each character
+    str++;                 // move to next character
+  }
+}
+
+void adc_init() {
+  // setup the A register
+  *my_ADCSRA |= 0b10000000;
+  *my_ADCSRA &= 0b11011111;
+  *my_ADCSRA &= 0b11110111;
+  *my_ADCSRA &= 0b11111000;
+
+
+  // setup the B register
+  *my_ADCSRB &= 0b11110111;
+  *my_ADCSRB &= 0b11111000;
+
+
+  // setup the MUX Register
+  *my_ADMUX &= 0b11011111;
+  *my_ADMUX &= 0b11100000;
+  *my_ADMUX &= 0b01111111;
+  *my_ADMUX |= 0b01000000;
+}
+
+unsigned int adc_read(unsigned char adc_channel) {
+  // clear the channel selection bits (MUX 4:0)
+  *my_ADMUX &= 0b11100000;
+
+  // clear the channel selection bits (MUX 5) hint: it's not in the ADMUX register
+  *my_ADCSRB &= 0b11110111;
+ 
+  // set the channel selection bits for channel 0
+  *my_ADMUX |= 0b00000000;
+
+  // set bit 6 of ADCSRA to 1 to start a conversion
+  *my_ADCSRA |= 0b01000000;
+
+  // wait for the conversion to complete
+  while((*my_ADCSRA & 0x40) != 0);
+
+  // return the result in the ADC data register and format the data based on right justification (check the lecture slide)
+  unsigned int val = *my_ADC_DATA;
+
+  return val;
+}
+
+void U0init(unsigned long U0baud) {
+  unsigned long FCPU = 16000000;
+  unsigned int tbaud;
+  tbaud = (FCPU / 16 / U0baud - 1);
+  // Same as (FCPU / (16 * U0baud)) - 1;
+  *myUCSR0A = 0x20;
+  *myUCSR0B = 0x18;
+  *myUCSR0C = 0x06;
+  *myUBRR0  = tbaud;
+}
+
+unsigned char U0kbhit() {
+  return *myUCSR0A & RDA;
+}
+
+unsigned char U0getchar() {
+  return *myUDR0;
+}
+
+void U0putchar(unsigned char U0pdata) {
+  while((*myUCSR0A & TBE) == 0); // wait until tx buffer is empty (bit 5 of UCSR0A is HIGH)
+  *myUDR0 = U0pdata;
+}
