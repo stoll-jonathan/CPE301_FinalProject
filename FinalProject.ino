@@ -1,4 +1,4 @@
-/* TODO: make temp and humidity update every minute, add vent stepper motor control, add fan control, add LEDs
+/* TODO: make temp and humidity update every minute, add vent stepper motor control, add fan control, add ISR to handle disabled toggling
 */
 
 // Jonathan Stoll
@@ -10,7 +10,7 @@
   LCD: digital 13, 12, 11, 10, 9, 8
   DHT11: digital 6
   Water Sensor: analog 15
-  
+  LEDs (all PB): red 0, yellow 1, green 2, blue 3
 */
 
 #include <LiquidCrystal.h>
@@ -18,15 +18,30 @@
 #include <I2C_RTC.h>
 #include <string.h>
 
+// On/off button
+bool DISABLED = false;
+
 // LCD pins <--> Arduino pins
 const int RS = 13, EN = 12, D4 = 11, D5 = 10, D6 = 9, D7 = 8;
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 
 // DHT11 temp & humidity sensor
-DHT11 dht11(6); // digital pin 6
+DHT11 dht11(6);
 
 // Real Time Clock
 static DS1307 RTC;
+
+// LEDs (all PB ports)
+unsigned char* ddr_b = (unsigned char*) 0x24;
+unsigned char* port_b = (unsigned char*) 0x25;
+int redPin = 0;
+int yellowPin = 1;
+int greenPin = 2;
+int bluePin = 3;
+
+// Motors
+unsigned char* ddr_h = (unsigned char*) 0x101;
+unsigned char* port_h = (unsigned char*) 0x102;
 
 // UART
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
@@ -54,49 +69,122 @@ void setup() {
   // setup the LCD
   lcd.begin(16, 2); // cols, rows
   lcd.clear();
+
+  // setup output pins
+  *ddr_b |= (1 << redPin);
+  *ddr_b |= (1 << yellowPin);
+  *ddr_b |= (1 << greenPin);
+  *ddr_b |= (1 << bluePin);
+
+  // set all LEDs to off by default
+  setBlue(0);
+  setGreen(0);
+  setYellow(0);
+  setRed(0);
 }
 
 void loop() {
-  char state;
+  if (DISABLED) {
+    setBlue(0);
+    setGreen(0);
+    setYellow(1);
+    setRed(0);
 
-  // Gather data
-  int WaterLevelReading = adc_read(15); // analog pin 15
-  int TemperatureReading = 0;
-  int HumidityReading = 0;
-  int dht11Result = dht11.readTemperatureHumidity(TemperatureReading, HumidityReading); // writes readings to TemperatureReading and HumidityReading and stores return status in dht11Result
-
-  // Output water level to serial monitor for debugging
-  U0printInt(WaterLevelReading);
-  U0putchar('\n');
-
-  // Output data to LCD
-  if (WaterLevelReading < 15) {
-    lcd.setCursor(0, 0);
-    lcd.print("Water is too low");
-    lcd.setCursor(0, 1);
-    lcd.print("                ");
-    state = 'e'; // error
-  }
-  else if (dht11Result == 0) {
     lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Temp: "); lcd.print(TemperatureReading);
-
-    lcd.setCursor(0, 1);
-    lcd.print("Humidity: "); lcd.print(HumidityReading);
-
-    // if temp good set to idle 'i' and set fan to off
-    // if temp no good set to running 'r' and set fan to on
   }
   else {
-    lcd.print(DHT11::getErrorString(dht11Result));
-    state = 'e'; // error
+    char state = ' ';
+
+    // Gather data
+    int WaterLevelReading = adc_read(15); // analog pin 15
+    int TemperatureReading = 0;
+    int HumidityReading = 0;
+    int dht11Result = dht11.readTemperatureHumidity(TemperatureReading, HumidityReading); // writes readings to TemperatureReading and HumidityReading and stores return status in dht11Result
+
+    // Output water level to serial monitor for debugging
+    U0printInt(WaterLevelReading);
+    U0putchar('\n');
+
+    // Output data to LCD
+    if (WaterLevelReading < 15) {
+      lcd.setCursor(0, 0);
+      lcd.print("Water is too low");
+      lcd.setCursor(0, 1);
+      lcd.print("                ");
+      
+      state = 'E'; // error
+      // set fan off
+    }
+    else if (dht11Result == 0) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Temp: "); lcd.print(TemperatureReading);
+
+      lcd.setCursor(0, 1);
+      lcd.print("Humidity: "); lcd.print(HumidityReading);
+
+      // if temp good set to idle 'I' and set fan to off
+      // if temp no good set to running 'R' and set fan to on
+    }
+    else {
+      lcd.print(DHT11::getErrorString(dht11Result));
+      
+      state = 'E'; // error
+      // set fan off
+    }
+
+
+    // Set LEDs
+    if (state == 'R') { // running
+      setBlue(1);
+      setGreen(0);
+      setYellow(0);
+      setRed(0);
+    }
+    else if (state == 'I') { // idle
+      setBlue(0);
+      setGreen(1);
+      setYellow(0);
+      setRed(0);
+    }
+    else if (state == 'E') { // error
+      setBlue(0);
+      setGreen(0);
+      setYellow(0);
+      setRed(1);
+    }
   }
 
-
-  
 }
 
+
+void setBlue(int on) {
+  if (on == 1)
+    *port_b |= (1 << bluePin);
+  else
+    *port_b &= ~(1 << bluePin);
+}
+
+void setGreen(int on) {
+  if (on == 1)
+    *port_b |= (1 << greenPin);
+  else
+    *port_b &= ~(1 << greenPin);
+}
+
+void setYellow(int on) {
+  if (on == 1)
+    *port_b |= (1 << yellowPin); // turn LED on
+  else
+    *port_b &= ~(1 << yellowPin);  // turn LED off
+}
+
+void setRed(int on) {
+  if (on == 1)
+    *port_b |= (1 << redPin);
+  else
+    *port_b &= ~(1 << redPin);
+}
 
 void U0printInt(int num) {
   char buffer[10];
