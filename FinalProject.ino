@@ -1,25 +1,29 @@
+/* TODO: make temp and humidity update every minute, add vent stepper motor control, add fan control, add LEDs
+*/
+
 // Jonathan Stoll
 // CPE 301 Final Project
 
 /*
   Pin Setups
   ----------
-  LCD: digital 12, 11, 5, 4, 3, 2
-  DHT11: digital 1
-  Water Sensor: analog 0
-  RTC: 
+  LCD: digital 13, 12, 11, 10, 9, 8
+  DHT11: digital 53
+  Water Sensor: analog 15
+  
 */
 
 #include <LiquidCrystal.h>
 #include <DHT11.h>
 #include <I2C_RTC.h>
+#include <string.h>
 
 // LCD pins <--> Arduino pins
-const int RS = 12, EN = 11, D4 = 5, D5 = 4, D6 = 3, D7 = 2;
+const int RS = 13, EN = 12, D4 = 11, D5 = 10, D6 = 9, D7 = 8;
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 
 // DHT11 temp & humidity sensor
-DHT11 dht11(1); // digital pin 1
+DHT11 dht11(53); // digital pin 53
 
 // Real Time Clock
 static DS1307 RTC;
@@ -53,28 +57,39 @@ void setup() {
 }
 
 void loop() {
+  char state;
+
   // Gather data
-  int WaterLevelReading = adc_read(0); // analog pin 0
+  int WaterLevelReading = adc_read(15); // analog pin 15
   int temperatureReading = 0;
   int humidityReading = 0;
   int dht11Result = dht11.readTemperatureHumidity(temperatureReading, humidityReading); // writes readings to temperatureReading and humidityReading and stores return status in dht11Result
 
 
   // Output data
-  if (WaterLevelReading < 25) {
+  if (WaterLevelReading < 250) {
     lcd.setCursor(0, 0);
     lcd.print("Water is too low\n");
-  }
+    state = 'e'; // error
 
-  if (dht11Result == 0) {
+    U0print("1\n");
+  }
+  else if (dht11Result == 0) {
     lcd.setCursor(0, 0);
     lcd.print("Temp: "); lcd.print(temperatureReading);
 
-    lcd.setCursor(1, 0);
+    lcd.setCursor(0, 1);
     lcd.print("Humidity: "); lcd.print(humidityReading);
+
+    // if temp good set to idle 'i' and set fan to off
+    // if temp no good set to running 'r' and set fan to on
   }
   else {
-    lcd.print(DHT11::getErrorString(dht11Result))
+    lcd.print(DHT11::getErrorString(dht11Result));
+    state = 'e'; // error
+
+
+    U0print("3\n");
   }
 
 
