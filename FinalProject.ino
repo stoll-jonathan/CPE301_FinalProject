@@ -8,7 +8,7 @@
   Pin Setups
   ----------
   LCD: digital 13, 12, 11, 10, 9, 8
-  DHT11: digital 53
+  DHT11: digital 6
   Water Sensor: analog 15
   
 */
@@ -23,7 +23,7 @@ const int RS = 13, EN = 12, D4 = 11, D5 = 10, D6 = 9, D7 = 8;
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 
 // DHT11 temp & humidity sensor
-DHT11 dht11(53); // digital pin 53
+DHT11 dht11(6); // digital pin 6
 
 // Real Time Clock
 static DS1307 RTC;
