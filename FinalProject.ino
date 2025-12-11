@@ -224,9 +224,9 @@ void loop() {
       if (TemperatureReading >= 25) {
         state = 'R';
       }
-      else (
+      else {
         state = 'I';
-      )
+      }
     }
   }
 
