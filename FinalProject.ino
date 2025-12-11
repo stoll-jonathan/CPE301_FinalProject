@@ -1,8 +1,9 @@
-/* TODO: add vent stepper motor control, add fan control
+/*  Jonathan Stoll
+    CPE 301 Final Project
+    
+    could not complete: vent stepper motor control
+    did not attempt: fan control
 */
-
-// Jonathan Stoll
-// CPE 301 Final Project
 
 /*
   Pin Setups
@@ -162,14 +163,12 @@ void loop() {
   if (now - lastSerialTime >= 1000) {  // 1000 ms = 1 second
     lastSerialTime = now;
     WaterLevelReading = adc_read(15);
-    //printStatusToSerial(WaterLevelReading);
-
-    U0print("\nUp: "); U0printInt(*pin_e & (1<<upbutton)); 
-    U0print("\nDown: "); U0printInt(*pin_g & (1<<downbutton));
-    U0print("\n");
+    printStatusToSerial(WaterLevelReading);
   }
 
   if (DISABLED) {
+    fanMotor(false);
+
     setBlue(0);
     setGreen(0);
     setYellow(1);
@@ -199,9 +198,9 @@ void loop() {
         
         int result = dht11.readTemperatureHumidity(TemperatureReading, HumidityReading);
         if (result == 0) { // success
-            dht11Result = 0;
-            timeForNextReading = rtc.now() + TimeSpan(0, 0, 1, 0); // 1 min from now
-        } 
+          dht11Result = 0;
+          timeForNextReading = rtc.now() + TimeSpan(0, 0, 1, 0); // 1 min from now
+        }
         else {
           dht11Result = 1; // error
         }
@@ -219,8 +218,15 @@ void loop() {
         lcd.print("Temperature: "); lcd.print(TemperatureReading);
         lcd.setCursor(0, 1);
         lcd.print("Humidity: "); lcd.print(HumidityReading);
-        state = 'I'; // idle
       }
+
+      
+      if (TemperatureReading >= 25) {
+        state = 'R';
+      }
+      else (
+        state = 'I';
+      )
     }
   }
 
@@ -230,22 +236,36 @@ void loop() {
     setGreen(0);
     setYellow(0);
     setRed(0);
+    
+    fanMotor(true);
   }
   else if (state == 'I') { // idle
     setBlue(0);
     setGreen(1);
     setYellow(0);
     setRed(0);
+
+    fanMotor(false);
   }
   else if (state == 'E') { // error
     setBlue(0);
     setGreen(0);
     setYellow(0);
     setRed(1);
+
+    fanMotor(false);
   }
 
 }
 
+void fanMotor(bool a) {
+  if (a) {
+    // turn on
+  }
+  else {
+    //turn off
+  }
+}
 
 void toggleDisabled() {
   static unsigned long last = 0;
