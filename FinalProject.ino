@@ -12,7 +12,9 @@
   Water Sensor: analog 15
   LEDs (all PB): red 0, yellow 1, green 2, blue 3
   RTC: SDA and SLC (digital 20 and 21)
-  Disabled Button: digital 2
+  Disable Button: digital 2
+  Up and down buttons: digital 3, 4
+  Stepper motor: digital 42, 44, 46, 48
 */
 
 #include <LiquidCrystal.h>
@@ -20,11 +22,17 @@
 #include <string.h>
 #include "RTClib.h"
 
-// On/off button
+// buttons
 volatile bool DISABLED = false;
 volatile unsigned char* ddr_d  = (unsigned char*) 0x2A;
 volatile unsigned char* port_d = (unsigned char*) 0x2B;
-int disabledButtonPin = 2;
+volatile unsigned char* ddr_e = (unsigned char*) 0x2C;
+volatile unsigned char* port_e = (unsigned char*) 0x2D;
+volatile unsigned char* ddr_g = (unsigned char*) 0x2E;
+volatile unsigned char* port_g = (unsigned char*) 0x2F;
+int disabledButtonPin = 2; // pd
+int upbutton = 5; // pe
+int downbutton = 5; // pg
 
 // LCD pins <--> Arduino pins
 const int RS = 13, EN = 12, D4 = 11, D5 = 10, D6 = 9, D7 = 8;
@@ -38,6 +46,23 @@ int TemperatureReading, HumidityReading;
 // Real Time Clock
 RTC_DS1307 rtc;
 DateTime timeForNextReading;
+
+// Stepper Motor (all PL)
+volatile unsigned char* ddr_l  = (unsigned char*) 0xA0;
+volatile unsigned char* port_l = (unsigned char*) 0xA1;
+volatile unsigned char* pin_e = (unsigned char*) 0x2C;
+volatile unsigned char* pin_g = (unsigned char*) 0x2E;
+const int stepperpin1 = 7;
+const int stepperpin2 = 5;
+const int stepperpin3 = 3;
+const int stepperpin4 = 1;
+const uint8_t stepperSequence[4] = {
+  0b0001, // pin1
+  0b0010, // pin2
+  0b0100, // pin3
+  0b1000  // pin4
+};
+int stepIndex = 0;
 
 // LEDs (all PB ports)
 unsigned char* ddr_b = (unsigned char*) 0x24;
@@ -86,9 +111,15 @@ void setup() {
   *ddr_b |= (1 << yellowPin);
   *ddr_b |= (1 << greenPin);
   *ddr_b |= (1 << bluePin);
+  *ddr_l |= (1 << stepperpin1);
+  *ddr_l |= (1 << stepperpin2);
+  *ddr_l |= (1 << stepperpin3);
+  *ddr_l |= (1 << stepperpin4);
 
   // setup input pins
   *ddr_d &= ~(1 << disabledButtonPin);
+  *ddr_e &= ~(1 << upbutton);
+  *ddr_g &= ~(1 << downbutton);
 
   // set all LEDs to off by default
   setBlue(0);
@@ -110,19 +141,33 @@ void setup() {
 
 void loop() {
   char state = ' ';
+  static int dht11Result = 0;
 
-  // for convienience, print state of the system every second
-  static unsigned long lastSerialTime = 0;
+  static unsigned long lastButton = 0;
   unsigned long now = millis();
-
-  if (now - lastSerialTime >= 1000) {  // 1000 ms = 1 second
-    lastSerialTime = now;
-    WaterLevelReading = adc_read(15);
-    printStatusToSerial(WaterLevelReading);
+  if(now - lastButton > 200) {
+    if (isUpPressed()) { 
+      stepStepper(true); 
+      lastButton = now; 
+    }
+    else if (isDownPressed()) { 
+      stepStepper(false); 
+      lastButton = now; 
+    }
   }
 
 
-  static int dht11Result = 0;
+  // for convienience, print state of the system every second
+  static unsigned long lastSerialTime = 0;
+  if (now - lastSerialTime >= 1000) {  // 1000 ms = 1 second
+    lastSerialTime = now;
+    WaterLevelReading = adc_read(15);
+    //printStatusToSerial(WaterLevelReading);
+
+    U0print("\nUp: "); U0printInt(*pin_e & (1<<upbutton)); 
+    U0print("\nDown: "); U0printInt(*pin_g & (1<<downbutton));
+    U0print("\n");
+  }
 
   if (DISABLED) {
     setBlue(0);
@@ -155,7 +200,7 @@ void loop() {
         int result = dht11.readTemperatureHumidity(TemperatureReading, HumidityReading);
         if (result == 0) { // success
             dht11Result = 0;
-            timeForNextReading = rtc.now() + TimeSpan(0, 0, 0, 1); // 1 min from now
+            timeForNextReading = rtc.now() + TimeSpan(0, 0, 1, 0); // 1 min from now
         } 
         else {
           dht11Result = 1; // error
@@ -211,6 +256,29 @@ void toggleDisabled() {
     DISABLED = !DISABLED;
     last = now;
   }
+}
+
+void stepStepper(bool forward) {
+    if(forward){
+        stepIndex = (stepIndex + 1) % 4;
+    } 
+    else {
+        stepIndex = (stepIndex + 3) % 4; // -1 modulo 4
+    }
+    uint8_t step = stepperSequence[stepIndex];
+    // Set stepper pins
+    if(step & 0b0001) *port_l |= (1 << stepperpin1); else *port_l &= ~(1 << stepperpin1);
+    if(step & 0b0010) *port_l |= (1 << stepperpin2); else *port_l &= ~(1 << stepperpin2);
+    if(step & 0b0100) *port_l |= (1 << stepperpin3); else *port_l &= ~(1 << stepperpin3);
+    if(step & 0b1000) *port_l |= (1 << stepperpin4); else *port_l &= ~(1 << stepperpin4);
+}
+
+bool isUpPressed() {
+    return !(*pin_e & (1 << upbutton));
+}
+
+bool isDownPressed() {
+    return !(*pin_g & (1 << downbutton));
 }
 
 void setBlue(int on) {
