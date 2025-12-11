@@ -1,4 +1,4 @@
-/* TODO: make temp and humidity update every minute, add vent stepper motor control, add fan control, add ISR to handle disabled toggling
+/* TODO: add vent stepper motor control, add fan control, add ISR to handle disabled toggling
 */
 
 // Jonathan Stoll
@@ -11,12 +11,13 @@
   DHT11: digital 6
   Water Sensor: analog 15
   LEDs (all PB): red 0, yellow 1, green 2, blue 3
+  RTC: SDA and SLC (digital 20 and 21)
 */
 
 #include <LiquidCrystal.h>
 #include <DHT11.h>
-#include <I2C_RTC.h>
 #include <string.h>
+#include "RTClib.h"
 
 // On/off button
 bool DISABLED = false;
@@ -29,7 +30,8 @@ LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 DHT11 dht11(6);
 
 // Real Time Clock
-static DS1307 RTC;
+RTC_DS1307 rtc;
+DateTime timeForNextReading;
 
 // LEDs (all PB ports)
 unsigned char* ddr_b = (unsigned char*) 0x24;
@@ -81,6 +83,15 @@ void setup() {
   setGreen(0);
   setYellow(0);
   setRed(0);
+
+  // setup RTC
+  if (!rtc.begin()) {
+    U0print("RTC FAIL\n");
+  }
+  if (!rtc.isrunning()) {
+      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+  timeForNextReading = (rtc.now() + TimeSpan(0, 0, 0, 2)); // 2 second buffer to allow things to load
 }
 
 void loop() {
@@ -100,10 +111,26 @@ void loop() {
     int TemperatureReading = 0;
     int HumidityReading = 0;
     int dht11Result = dht11.readTemperatureHumidity(TemperatureReading, HumidityReading); // writes readings to TemperatureReading and HumidityReading and stores return status in dht11Result
-
-    // Output water level to serial monitor for debugging
+  
+    // Output time and water level to serial monitor for debugging
+    U0putchar('\n');
+    U0printInt(rtc.now().hour());
+    U0putchar(':');
+    U0printInt(rtc.now().minute());
+    U0putchar(':');
+    U0printInt(rtc.now().second());
+    U0putchar('\n');
+    U0print("Next Reading at ");
+    U0printInt(timeForNextReading.hour());
+    U0putchar(':');
+    U0printInt(timeForNextReading.minute());
+    U0putchar(':');
+    U0printInt(timeForNextReading.second());
+    U0putchar('\n');
+    U0print("water level: ");
     U0printInt(WaterLevelReading);
     U0putchar('\n');
+
 
     // Output data to LCD
     if (WaterLevelReading < 15) {
@@ -116,18 +143,27 @@ void loop() {
       // set fan off
     }
     else if (dht11Result == 0) {
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Temp: "); lcd.print(TemperatureReading);
+      if (rtc.now() == timeForNextReading) {
+        U0print("Temp and Humidity Readings Updated\n");
+        timeForNextReading = (rtc.now() + TimeSpan(0, 0, 1, 0)); // 1 minute from now
+        
+        
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Temp: "); lcd.print(TemperatureReading);
 
-      lcd.setCursor(0, 1);
-      lcd.print("Humidity: "); lcd.print(HumidityReading);
-
-      // if temp good set to idle 'I' and set fan to off
-      // if temp no good set to running 'R' and set fan to on
+        lcd.setCursor(0, 1);
+        lcd.print("Humidity: "); lcd.print(HumidityReading);
+        
+        
+        // if temp good set to idle 'I' and set fan to off
+        // if temp no good set to running 'R' and set fan to on
+      }
     }
     else {
-      lcd.print(DHT11::getErrorString(dht11Result));
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("DHT11 error");
       
       state = 'E'; // error
       // set fan off
